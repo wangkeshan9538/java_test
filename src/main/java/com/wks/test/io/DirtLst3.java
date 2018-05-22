@@ -5,6 +5,10 @@ import java.io.FilenameFilter;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
+/**
+ * @author Administrator
+ * 使用匿名内部类来简化
+ */
 public class DirtLst3 {
 
 	public static void main(final String[] args) {

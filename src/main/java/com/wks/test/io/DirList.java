@@ -5,6 +5,10 @@ import java.io.FilenameFilter;
 import java.util.Arrays;
 import java.util.regex.Pattern;
 
+/**
+ * @author Administrator
+ * 使用 DirFilter 来进行过滤File
+ */
 public class DirList {
 	public static void main(String[] args) {
 		File path=new File("L:\\code\\java\\test\\src\\main\\java\\com\\wks\\test\\io");
