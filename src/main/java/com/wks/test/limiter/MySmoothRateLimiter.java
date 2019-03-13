@@ -1,39 +1,54 @@
 package com.wks.test.limiter;
 
 import com.google.common.math.LongMath;
+import lombok.Data;
 
 import static java.lang.Math.min;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-public   class MySmoothRateLimiter extends MyRateLimiter{
 
+@Data
+public class MySmoothRateLimiter extends MyRateLimiter {
+
+
+    /**
+     * 允许的 突发 时间长度
+     */
     double maxBurstSeconds;
 
-
-
-    /** The currently stored permits. */
+    /**
+     * 当前已存的 令牌数量
+     */
     double storedPermits;
 
-    /** The maximum number of stored permits. */
+    /**
+     * 最大允许 存储 的令牌数量
+     */
     double maxPermits;
 
     /**
-     * The interval between two unit requests, at our stable rate. E.g., a stable rate of 5 permits
-     * per second has a stable interval of 200ms.
+     * 使用频率算出的 令牌产生间隔
      */
     double stableIntervalMicros;
 
     /**
-     * The time when the next request (no matter its size) will be granted. After granting a request,
-     * this is pushed further in the future. Large requests push this further than small requests.
+     * 下次产生 令牌的 时间
      */
     private long nextFreeTicketMicros = 0L; // could be either in the past or future
 
+
     public MySmoothRateLimiter(SleepingStopwatch stopwatch, double maxBurstSeconds) {
         super(stopwatch);
-        this.maxBurstSeconds=maxBurstSeconds;
+        this.maxBurstSeconds = maxBurstSeconds;
     }
 
+
+    /**
+     * 设置 rate
+     *
+     * @param permitsPerSecond
+     * @param nowMicros
+     */
     @Override
     final void doSetRate(double permitsPerSecond, long nowMicros) {
         resync(nowMicros);
@@ -43,6 +58,10 @@ public   class MySmoothRateLimiter extends MyRateLimiter{
     }
 
 
+    /**
+     * @param permitsPerSecond
+     * @param stableIntervalMicros
+     */
     void doSetRate(double permitsPerSecond, double stableIntervalMicros) {
         double oldMaxPermits = this.maxPermits;
         maxPermits = maxBurstSeconds * permitsPerSecond;
@@ -83,65 +102,24 @@ public   class MySmoothRateLimiter extends MyRateLimiter{
     /**
      * Returns the number of microseconds during cool down that we have to wait to get a new permit.
      */
-    double coolDownIntervalMicros(){
+    double coolDownIntervalMicros() {
         return stableIntervalMicros;
     }
 
-    /** Updates {@code storedPermits} and {@code nextFreeTicketMicros} based on the current time. */
+    /**
+     * Updates storedPermits nextFreeTicketMicros  based on the current time.
+     * 同步 令牌桶的信息
+     */
     void resync(long nowMicros) {
         // if nextFreeTicket is in the past, resync to now
         if (nowMicros > nextFreeTicketMicros) {
+            //算出这段间隔 内产生了多少新的令牌
             double newPermits = (nowMicros - nextFreeTicketMicros) / coolDownIntervalMicros();
+            //更新存储令牌数
             storedPermits = min(maxPermits, storedPermits + newPermits);
+            //
             nextFreeTicketMicros = nowMicros;
         }
     }
 
-
-    /**
-     * get set
-     *
-     *
-     */
-
-
-    public double getMaxBurstSeconds() {
-        return maxBurstSeconds;
-    }
-
-    public void setMaxBurstSeconds(double maxBurstSeconds) {
-        this.maxBurstSeconds = maxBurstSeconds;
-    }
-
-    public double getStoredPermits() {
-        return storedPermits;
-    }
-
-    public void setStoredPermits(double storedPermits) {
-        this.storedPermits = storedPermits;
-    }
-
-    public double getMaxPermits() {
-        return maxPermits;
-    }
-
-    public void setMaxPermits(double maxPermits) {
-        this.maxPermits = maxPermits;
-    }
-
-    public double getStableIntervalMicros() {
-        return stableIntervalMicros;
-    }
-
-    public void setStableIntervalMicros(double stableIntervalMicros) {
-        this.stableIntervalMicros = stableIntervalMicros;
-    }
-
-    public long getNextFreeTicketMicros() {
-        return nextFreeTicketMicros;
-    }
-
-    public void setNextFreeTicketMicros(long nextFreeTicketMicros) {
-        this.nextFreeTicketMicros = nextFreeTicketMicros;
-    }
 }

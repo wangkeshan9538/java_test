@@ -15,30 +15,44 @@ import static java.lang.Math.min;
 import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
-public abstract class MyRateLimiter  {
+public abstract class MyRateLimiter {
 
+    /**
+     * 创建一个 限流器 默认使用 SmoothRateLimiter  ,突发时长 默认使用1秒
+     *
+     * @param permitsPerSecond
+     * @return
+     */
     public static MyRateLimiter create(double permitsPerSecond) {
-
-        return create(permitsPerSecond, SleepingStopwatch.createFromSystemTimer());
+        return create(permitsPerSecond,1.0);
     }
 
-    @VisibleForTesting
-    static MyRateLimiter create(double permitsPerSecond, SleepingStopwatch stopwatch) {
-        MyRateLimiter MyRateLimiter = new MySmoothRateLimiter (stopwatch, 1.0 /* maxBurstSeconds */);
+    /**
+     * 允许设定 频率 和 突发时长
+     * @param permitsPerSecond
+     * @param maxBurstSeconds
+     * @return
+     */
+    public static MyRateLimiter create(double permitsPerSecond, double maxBurstSeconds) {
+        MyRateLimiter MyRateLimiter = new MySmoothRateLimiter(SleepingStopwatch.createFromSystemTimer(), maxBurstSeconds);
         MyRateLimiter.setRate(permitsPerSecond);
         return MyRateLimiter;
     }
 
-
-
     /**
-     * The underlying timer; used both to measure elapsed time and sleep as necessary. A separate
-     * object to facilitate testing.
+     * acquire  时候的 睡眠器
      */
     private final SleepingStopwatch stopwatch;
 
-    @MonotonicNonNull private volatile Object mutexDoNotUseDirectly;
+    /**
+     * 用来做锁 的互斥信号对象
+     */
+    private volatile Object mutexDoNotUseDirectly;
 
+    /**
+     * getter of mutexDoNotUseDirectly
+     * @return
+     */
     private Object mutex() {
         Object mutex = mutexDoNotUseDirectly;
         if (mutex == null) {
@@ -57,6 +71,11 @@ public abstract class MyRateLimiter  {
     }
 
 
+    /**
+     *
+     *  设置频率
+     * @param permitsPerSecond
+     */
     public final void setRate(double permitsPerSecond) {
         checkArgument(
                 permitsPerSecond > 0.0 && !Double.isNaN(permitsPerSecond), "rate must be positive");
@@ -77,13 +96,19 @@ public abstract class MyRateLimiter  {
     abstract double doGetRate();
 
 
-    @CanIgnoreReturnValue
+    /**
+     * 获取 一个令牌，如果没有 会阻塞等待
+     * @return
+     */
     public double acquire() {
         return acquire(1);
     }
 
-
-    @CanIgnoreReturnValue
+    /**
+     * 获取 指定的令牌数 ，没有就阻塞
+      * @param permits
+     * @return
+     */
     public double acquire(int permits) {
         long microsToWait = reserve(permits);
         stopwatch.sleepMicrosUninterruptibly(microsToWait);
@@ -91,6 +116,11 @@ public abstract class MyRateLimiter  {
     }
 
 
+    /**
+     * 内部使用 ，获得令牌 并 返回 需要等待的时间
+     * @param permits
+     * @return
+     */
     final long reserve(int permits) {
         checkPermits(permits);
         synchronized (mutex()) {
@@ -99,25 +129,46 @@ public abstract class MyRateLimiter  {
     }
 
 
+    /**
+     * 非阻塞 获取令牌 ， 判断在 timeout 时间内 是否可以获得令牌
+     * @param timeout
+     * @param unit
+     * @return
+     */
     public boolean tryAcquire(long timeout, TimeUnit unit) {
         return tryAcquire(1, timeout, unit);
     }
 
-
+    /**
+     * 非阻塞 获取令牌 ， 判断是否可以获得 指定 令牌数
+     * @param permits
+     * @return
+     */
     public boolean tryAcquire(int permits) {
         return tryAcquire(permits, 0, MICROSECONDS);
     }
 
-
+    /**
+     * 非阻塞 获取令牌 ， 判断是否可以获得 1个令牌数
+     * @return
+     */
     public boolean tryAcquire() {
         return tryAcquire(1, 0, MICROSECONDS);
     }
 
-
+    /**
+     * timeout 时间内 是否可以获得指定数量的 令牌
+     * @param permits
+     * @param timeout
+     * @param unit
+     * @return
+     */
     public boolean tryAcquire(int permits, long timeout, TimeUnit unit) {
         long timeoutMicros = max(unit.toMicros(timeout), 0);
         checkPermits(permits);
         long microsToWait;
+
+        //带锁，所以不会产生并发导致nowMicros 一样，
         synchronized (mutex()) {
             long nowMicros = stopwatch.readMicros();
             if (!canAcquire(nowMicros, timeoutMicros)) {
@@ -130,44 +181,74 @@ public abstract class MyRateLimiter  {
         return true;
     }
 
+
+    /**
+     * 判断是否 可以 acquire
+     * @param nowMicros
+     * @param timeoutMicros
+     * @return
+     */
     private boolean canAcquire(long nowMicros, long timeoutMicros) {
+
+        //System.out.println(queryEarliestAvailable(nowMicros));
+        //System.out.println(nowMicros);
+
         return queryEarliestAvailable(nowMicros) - timeoutMicros <= nowMicros;
     }
 
-
+    /**
+     * 预约并返回 需要等待的时间
+     * @param permits
+     * @param nowMicros
+     * @return
+     */
     final long reserveAndGetWaitLength(int permits, long nowMicros) {
         long momentAvailable = reserveEarliestAvailable(permits, nowMicros);
         return max(momentAvailable - nowMicros, 0);
     }
 
 
+    /**
+     * 获得 最早的 令牌产生时间
+     * @param nowMicros
+     * @return
+     */
     abstract long queryEarliestAvailable(long nowMicros);
 
 
+    /**
+     * 预约令牌，并返回需要等待的时间
+     * @param permits
+     * @param nowMicros
+     * @return
+     */
     abstract long reserveEarliestAvailable(int permits, long nowMicros);
 
 
-
+    /**
+     * 睡眠类 ，负责阻塞等待令牌时的sleep
+     */
     abstract static class SleepingStopwatch {
-        /** Constructor for use by subclasses. */
-        protected SleepingStopwatch() {}
 
-        /*
-         * We always hold the mutex when calling this. TODO(cpovirk): Is that important? Perhaps we need
-         * to guarantee that each call to reserveEarliestAvailable, etc. sees a value >= the previous?
-         * Also, is it OK that we don't hold the mutex when sleeping?
-         */
+        protected SleepingStopwatch() {
+        }
+
         protected abstract long readMicros();
 
         protected abstract void sleepMicrosUninterruptibly(long micros);
+
 
         public static SleepingStopwatch createFromSystemTimer() {
             return new SleepingStopwatch() {
                 final Stopwatch stopwatch = Stopwatch.createStarted();
 
+                final Long startTime=System.nanoTime();
+
+
                 @Override
                 protected long readMicros() {
-                    return stopwatch.elapsed(MICROSECONDS);
+                    //return stopwatch.elapsed(MICROSECONDS);
+                    return (System.nanoTime()-startTime)/1000 ;
                 }
 
                 @Override
