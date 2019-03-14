@@ -1,9 +1,11 @@
 package com.wks.test.limiter;
 
 import com.google.common.math.LongMath;
+import com.google.common.util.concurrent.Uninterruptibles;
 import lombok.Data;
 
 import static java.lang.Math.min;
+import static java.util.concurrent.TimeUnit.MICROSECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
 
@@ -37,9 +39,17 @@ public class MySmoothRateLimiter extends MyRateLimiter {
     private long nextFreeTicketMicros = 0L; // could be either in the past or future
 
 
-    public MySmoothRateLimiter(SleepingStopwatch stopwatch, double maxBurstSeconds) {
-        super(stopwatch);
+    public Long startTime;
+
+
+    public MySmoothRateLimiter() {
+        this.startTime=System.nanoTime();
+    }
+
+    public MySmoothRateLimiter( double maxBurstSeconds) {
+        super();
         this.maxBurstSeconds = maxBurstSeconds;
+        this.startTime=System.nanoTime();
     }
 
 
@@ -52,6 +62,7 @@ public class MySmoothRateLimiter extends MyRateLimiter {
     @Override
     final void doSetRate(double permitsPerSecond, long nowMicros) {
         resync(nowMicros);
+
         double stableIntervalMicros = SECONDS.toMicros(1L) / permitsPerSecond;
         this.stableIntervalMicros = stableIntervalMicros;
         doSetRate(permitsPerSecond, stableIntervalMicros);
@@ -122,4 +133,14 @@ public class MySmoothRateLimiter extends MyRateLimiter {
         }
     }
 
+    @Override
+    public void sleepMicrosUninterruptibly(long micros) {
+        if (micros > 0) {
+            Uninterruptibles.sleepUninterruptibly(micros, MICROSECONDS);
+        }
+    }
+    @Override
+    public long readMicros() {
+        return (System.nanoTime() - startTime) / 1000;
+    }
 }
